@@ -14,5 +14,5 @@ This repository contains a study of the effectiveness of selected data imputatio
 ```r
 library(dplyr)
 library(VIM)
-library(kableExtra)s
+library(kableExtra)
 ```
