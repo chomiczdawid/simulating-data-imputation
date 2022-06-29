@@ -1,0 +1,206 @@
+---
+title: "Study of the effectiveness of selected data imputation techniques on the mobile phone parameters dataset"
+author: "Dawid Chomicz"
+date: '2022-06-29'
+graphics: yes
+linkcolor: blue
+link-citations: yes
+fontsize: 11pt
+output:
+  bookdown::pdf_document2:
+    keep_tex: yes
+    toc: no
+    citation_package: biblatex
+    number_sections: false
+    latex_engine: pdflatex
+header-includes: 
+  - \usepackage{setspace}
+  - \usepackage{caption}
+  - \captionsetup[figure]{labelformat=empty}
+  - \usepackage{floatrow}
+  - \floatsetup[figure]{capposition=top}
+---
+
+```{r, setup, include=FALSE}
+# Default code blocks settings
+knitr::opts_chunk$set(echo=FALSE, comment= " ")
+
+# Libraries and options
+library(dplyr)
+library(VIM)
+library(kableExtra)
+
+options(digits=2) # decimal places
+options(scipen=999) # standard number format
+
+# Loading data
+read.csv("phone.csv",sep=';',dec='.') %>%
+  as.matrix() -> d0
+
+# Descriptive statistics function
+stats <- function(x) {
+  n <- sum(!is.na(x))
+  x_sr <- mean(x,na.rm=T)
+  Me <- median(x,na.rm=T)
+  s <- sd(x,na.rm=T)
+  Vs <- s/x_sr
+  s_x_sr <- s/n^0.5
+  x <- x[!is.na(x)]
+  g1 <- sum((x-x_sr)^3)/(n-1)/(n-2)*n/s^3
+  return(c(x_sr=x_sr,Me=Me,s=s,Vs=Vs,s_x_sr=s_x_sr,g1=g1))
+}
+
+# Simulation, may take several minutes
+nsym <- 1000
+w1 <- w2 <- w3 <- w4 <- w5 <- array(NA,c(6,10,nsym))
+for (i in 1:nsym) {
+  # MCAR type missing data generation, 20% of dataset
+  miss <- d0
+  miss[,3:10][runif(length(d0[,3:10]))<0.2] <- NA
+  ## Imputation
+  # mean
+  d1 <- miss
+  for(j in 1:ncol(d1)) {
+    d1[,j][is.na(d1[,j])] <- mean(d1[,j],na.rm=T)
+  }
+  # median
+  d2 <- miss
+  for(k in 1:ncol(d2)) {
+    d2[,k][is.na(d2[,k])] <- median(d2[,k],na.rm=T)
+  }
+  # regression
+  d3 <- regressionImp(fc+memory+weight+ram+pc+sc_h+sc_w+talk_t~battery+speed,data=miss)
+  d3 <- as.matrix(d3[,1:10])
+  # kNN
+  d4 <- kNN(miss)
+  d4 <- as.matrix(d4[,1:10])
+  # randomforest
+  d5 <- as.data.frame(miss)
+  d5 <- rangerImpute(fc+memory+weight+ram+pc+sc_h+sc_w+talk_t~battery+speed,data=d5)
+  d5 <- as.matrix(d5[,1:10])
+  # Desc stats
+  w1[,,i] <- apply(d1,2,stats)
+  w2[,,i] <- apply(d2,2,stats)
+  w3[,,i] <- apply(d3,2,stats)
+  w4[,,i] <- apply(d4,2,stats)
+  w5[,,i] <- apply(d5,2,stats)
+}
+
+# Stats comparison
+apply_stats <- function(y,d) {
+  x0 <- apply(d,2,stats)
+  x0 <- x0[,3:10]
+  x1 <- apply(y,c(1,2),mean)
+  x1 <- x1[,3:10]
+  rownames(x1) <- rownames(x0)
+  x1 <- x0 - x1
+  return(cbind(x1, abs_sum = rowSums(abs(x1))))
+}
+
+f0 <- apply(d0,2,stats)
+f1 <- apply_stats(w1,d0)
+f2 <- apply_stats(w2,d0)
+f3 <- apply_stats(w3,d0)
+f4 <- apply_stats(w4,d0)
+f5 <- apply_stats(w5,d0)
+
+p <- cbind(f1[,9],f2[,9],f3[,9],f4[,9],f5[,9])
+colnames(p) <- c("mean","median","regression","kNN","random forest")
+rownames(p) <- rownames(f0)
+```
+
+The aim of the study is to compare the effectiveness of selected data imputation techniques. For this purpose, the *phone.csv* data set describing the technical parameters of mobile phones was used. The process of generating data deficiencies and imputating these deficiencies was simulated, and then the average descriptive statistics for each imputation technique used were estimated. The calculations were made with the R programming language.
+
+## Characteristics of the dataset
+The data comes from the resources of the [kaggle.com](https://www.kaggle.com/datasets/iabhishekofficial/mobile-price-classification?resource=download&select=train.csv) site. The set contains 1000 observations in the form of numerical variables. Detailed description of each variable:
+
+*	*battery* –- total battery capacity in mAh,
+*	*speed* -- processor speed,
+*	*fc* -- front camera megapixels,
+*	*memory* -- internal memory in GB,
+*	*weight* -- phone weight,
+*	*pc* -- main camera megapixels,
+*	*ram* -- RAM in MB,
+*	*sc_h* -- screen height in cm,
+*	*sc_w* -- screen width in cm,
+*	*talk_t* -- maximum usage time in hours without recharging the battery.
+
+## Details of the simulation process
+The performed simulation aims to compare the effectiveness of selected data imputation techniques on the same set of observations. For this purpose, an algorithm consisting of three steps was prepared:
+
+1. Generating MCAR (*missing completely at random*) type missing data in the set, covering 20% of the data without taking into account the first two variables.
+2. Application of the following imputation techniques to the generated set: mean, median, regression, K nearest neighbors, random forest.
+3. Calculation of statistics describing the structure of the dataset after imputation for each technique.
+
+The above algorithm was iterated a thousand times and the results of these iterations were averaged.
+
+Parameters adopted for individual techniques:
+
+* Regression -- generalized linear model with automatic selection of the linking function and distribution of the modeled variable, where the dependent variables were all variables with missing values, and the explanatory variables were the first two variables,
+* K najbliższych sąsiadów -- parameter *k = 5*,
+* Las losowy -- the formula for modeled and explanatory variables is the same as in regression.
+
+## Missing data characteristics
+```{r fig.height=5, fig.width=10, fig.align='center', fig.cap="Figure 1. The frequency and distribution of missing data"}
+aggr(miss, plot = TRUE)
+```
+In the chart above, you can see the frequency and distribution of missing data in the generated dataset. The frequency as assumed fluctuates around 20%. There are no deficiencies in the first two variables. Combinations od missing data do not show strong relations, although there is a slightly greater number of deficiency combinations between *fc* and *memory* and between *memory* and *weight* than in other cases.
+
+## Simulation results
+The first table below lists the descriptive statistics for the initial, unchanged dataset. The following tables show the subtraction of the averaged statistics for simulated imputation techniques from the base set statistics. The * abs_sum * column contains the sum of the absolute difference values for each statistic.
+\newpage
+**For initial data**
+```{r}
+knitr::kable(f0,format = "latex",align = "c",booktabs = TRUE,longtable = TRUE,linesep = "") %>%
+kableExtra::kable_styling(position = "center",latex_options = c("striped", "repeat_header"),stripe_color = "gray!15")
+```
+**Mean imputation**
+```{r}
+knitr::kable(f1,format = "latex",align = "c",booktabs = TRUE,longtable = TRUE,linesep = "") %>%
+kableExtra::kable_styling(position = "left",latex_options = c("striped", "repeat_header"),stripe_color = "gray!15")
+```
+**Median imputation**
+```{r}
+knitr::kable(f2,format = "latex",align = "c",booktabs = TRUE,longtable = TRUE,linesep = "") %>%
+kableExtra::kable_styling(position = "left",latex_options = c("striped", "repeat_header"),stripe_color = "gray!15")
+```
+**Regression imputation**
+```{r}
+knitr::kable(f3,format = "latex",align = "c",booktabs = TRUE,longtable = TRUE,linesep = "") %>%
+kableExtra::kable_styling(position = "left",latex_options = c("striped", "repeat_header"),stripe_color = "gray!15")
+```
+\newpage
+**K nearest neighbors imputation**
+```{r}
+knitr::kable(f4,format = "latex",align = "c",booktabs = TRUE,longtable = TRUE,linesep = "") %>%
+kableExtra::kable_styling(position = "left",latex_options = c("striped", "repeat_header"),stripe_color = "gray!15")
+```
+**Random forest imputation**
+```{r}
+knitr::kable(f5,format = "latex",align = "c",booktabs = TRUE,longtable = TRUE,linesep = "") %>%
+kableExtra::kable_styling(position = "left",latex_options = c("striped", "repeat_header"),stripe_color = "gray!15")
+```
+
+The table below compares all the sums of the absolute values of the estimated differences for each simulated imputation technique.
+
+```{r}
+knitr::kable(p,format = "latex",align = "c",booktabs = TRUE,longtable = TRUE,linesep = "") %>%
+kableExtra::kable_styling(position = "left",latex_options = c("striped", "repeat_header"),stripe_color = "gray!15")
+```
+
+Comparing the above tables, it can be concluded that:
+
+In the case of the arithmetic mean for the studied variables, imputations with regression and random forest turned out to be the closest.
+
+In the case of the median for the studied variables, the imputations with the median and the K nearest neighbors turned out to be the most similar.
+
+In the case of the standard deviation for the studied variables, the imputations of K nearest neighbors and the random forest turned out to be the most similar.
+
+In the case of the coefficient of variation for the studied variables, the imputations of K nearest neighbors and the random forest turned out to be the most similar.
+
+In the case of the standard error of the mean for the studied variables, the imputations of K nearest neighbors and the random forest turned out to be the closest.
+
+In the case of the asymmetry coefficient for the studied variables, the imputations of K nearest neighbors and random forest turned out to be the closest.
+
+
+**Conclusion**: The imputation technique that produces results on average closest to the original set values is the K nearest neighbors. In the case of the mean and the median, better results were achieved by the mean and median imputations respectively, which seems natural due to the specificity of these measures.
