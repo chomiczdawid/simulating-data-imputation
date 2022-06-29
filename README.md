@@ -1,4 +1,4 @@
-## Seasonal ARIMA model
+## Simulating data imputation
 This repository contains a study of the effectiveness of selected data imputation techniques on the mobile phone parameters dataset. To preview the project, click on the file `report.pdf`. PDF was generated using R Markdown. For clean R code click on the file `code.R`.
 
 ### Analytical process carried out:
@@ -14,5 +14,5 @@ This repository contains a study of the effectiveness of selected data imputatio
 ```r
 library(dplyr)
 library(VIM)
-library(kableExtra)s
+library(kableExtra)
 ```
